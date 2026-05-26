@@ -113,6 +113,7 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
         height: result.height,
         palette: result.palette,
         gridData: result.gridData,
+        imageBytes: bytes,
       );
 
       setState(() {

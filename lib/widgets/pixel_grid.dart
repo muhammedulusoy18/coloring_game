@@ -112,8 +112,9 @@ class _PixelGridPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final showNumbers = cellSize >= 9;
-    final gap = cellSize > 8 ? _gap : 0.4;
+    // Always show numbers, even in small cells
+    final showNumbers = cellSize >= 4;
+    final gap = cellSize > 8 ? _gap : (cellSize > 5 ? 0.5 : 0.3);
 
     canvas.drawRect(
       Rect.fromLTWH(0, 0, size.width, size.height),
@@ -171,14 +172,14 @@ class _PixelGridPainter extends CustomPainter {
             final numStr = '${targetColorIndex + 1}';
             final cacheKey = '${numStr}_${isHighlighted}_$selectedColorIndex';
             if (!textCache.containsKey(cacheKey)) {
-              final fontSize = (cellSize * 0.44).clamp(6.0, 16.0);
+              final fontSize = (cellSize * 0.5).clamp(4.0, 16.0);
               final tp = TextPainter(
                 text: TextSpan(
                   text: numStr,
                   style: TextStyle(
-                    color: const Color(0xFF3D4451),
+                    color: const Color(0xFF222222),
                     fontSize: fontSize,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
                     height: 1.0,
                   ),
                 ),

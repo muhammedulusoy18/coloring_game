@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:uuid/uuid.dart';
 import '../models/game_room.dart';
@@ -64,13 +66,14 @@ class FirebaseService {
     return true;
   }
 
-  /// Upload grid data to Firebase (only palette and grid map, lightweight)
+  /// Upload grid data to Firebase
   static Future<void> uploadGridData({
     required String roomId,
     required int width,
     required int height,
     required List<int> palette,
     required Map<String, int> gridData,
+    Uint8List? imageBytes,
   }) async {
     final ref = _db.ref('rooms/$roomId');
 
@@ -81,7 +84,13 @@ class FirebaseService {
     });
     await _db.ref('grids/$roomId').set(gridMap);
 
-    // 2. THEN update the room status so the guest can join safely
+    // 2. Store original image as base64 (compressed)
+    if (imageBytes != null) {
+      final b64 = base64Encode(imageBytes);
+      await _db.ref('images/$roomId').set(b64);
+    }
+
+    // 3. THEN update the room status so the guest can join safely
     await ref.update({
       'gridWidth': width,
       'gridHeight': height,
@@ -90,6 +99,17 @@ class FirebaseService {
       'coloredCells': 0,
       'status': 'playing',
     });
+  }
+
+  /// Retrieve original image bytes
+  static Future<Uint8List?> getOriginalImage(String roomId) async {
+    try {
+      final snapshot = await _db.ref('images/$roomId').get();
+      if (!snapshot.exists || snapshot.value == null) return null;
+      return base64Decode(snapshot.value as String);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// Listen for room changes

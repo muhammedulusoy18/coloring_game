@@ -40,6 +40,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   // Painting history for replay
   final List<_PaintStep> _paintHistory = [];
+  int _myBrushStrokes = 0; // only count this player's strokes
 
   // Completed colors tracking
   Set<int> _completedColors = {};
@@ -116,6 +117,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             if (!_cellStates.containsKey(cellKey)) {
               _cellStates[cellKey] = colorIndex;
               _coloredCells = _cellStates.length;
+              // Track ALL players' strokes for replay & count
+              _paintHistory.add(_PaintStep(cellKey: cellKey, colorIndex: colorIndex));
+              if (playerId == widget.playerId) _myBrushStrokes++;
               _updateCompletedColors();
               _checkCompletion();
             }
@@ -204,6 +208,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       setState(() {
         _cellStates[cellKey] = _selectedColorIndex;
         _coloredCells = _cellStates.length;
+        _myBrushStrokes++;
         _paintHistory.add(_PaintStep(cellKey: cellKey, colorIndex: _selectedColorIndex));
         _updateCompletedColors();
       });
@@ -263,8 +268,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     _replayTimer = Timer(Duration(milliseconds: delay), () {
       if (!mounted) return;
       if (_replayStep >= _paintHistory.length) {
-        // Replay done
-        Future.delayed(const Duration(milliseconds: 800), () {
+        // Replay done — stop timer but keep the final painted view visible
+        _replayTimer?.cancel();
+        Future.delayed(const Duration(milliseconds: 600), () {
           if (mounted) setState(() => _isReplaying = false);
         });
         return;
@@ -280,7 +286,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   void _stopReplay() {
     _replayTimer?.cancel();
-    setState(() => _isReplaying = false);
+    // Keep _isReplaying = true, just stop the timer, so user sees the result
+    setState(() {
+      _isReplaying = false;
+    });
   }
 
   // ── Save to Gallery ────────────────────────────────────────────
@@ -525,10 +534,80 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                             borderRadius: BorderRadius.circular(14),
                             side: const BorderSide(color: AppTheme.borderDark),
                           ),
-                          onSelected: (val) {
+                          onSelected: (val) async {
                             if (val == 'replay') _startReplay();
                             if (val == 'save') _saveToGallery();
                             if (val == 'stop_replay') _stopReplay();
+                            if (val == 'photo') {
+                              // Render painted grid to image
+                              if (_cellStates.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text('Henüz hiçbir hücre boyanmadı'),
+                                    backgroundColor: AppTheme.accentOrange,
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                    margin: const EdgeInsets.all(16),
+                                  ),
+                                );
+                                return;
+                              }
+                              final recorder = ui.PictureRecorder();
+                              final canvas = Canvas(recorder);
+                              const double px = 8.0;
+                              final w = _gridWidth * px;
+                              final h = _gridHeight * px;
+                              // White background for uncolored cells
+                              canvas.drawRect(Rect.fromLTWH(0, 0, w, h),
+                                  Paint()..color = const Color(0xFFF5F2EC));
+                              final paint = Paint()..isAntiAlias = false;
+                              for (int y = 0; y < _gridHeight; y++) {
+                                for (int x = 0; x < _gridWidth; x++) {
+                                  final key = '${x}_$y';
+                                  if (_cellStates.containsKey(key)) {
+                                    final ci = _cellStates[key]!;
+                                    paint.color = ci < _palette.length
+                                        ? Color(_palette[ci])
+                                        : Colors.grey;
+                                    canvas.drawRect(
+                                        Rect.fromLTWH(x * px, y * px, px, px), paint);
+                                  }
+                                }
+                              }
+                              final picture = recorder.endRecording();
+                              final img = await picture.toImage(w.toInt(), h.toInt());
+                              final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+                              if (!mounted) return;
+                              if (byteData == null) return;
+                              final bytes = byteData.buffer.asUint8List();
+                              showDialog(
+                                context: context,
+                                builder: (_) => Dialog(
+                                  backgroundColor: Colors.black87,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const SizedBox(height: 16),
+                                      const Text('Boyanmış Hali',
+                                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+                                      const SizedBox(height: 12),
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.memory(bytes, fit: BoxFit.contain),
+                                      ),
+                                      const SizedBox(height: 12),
+                                      TextButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        child: const Text('Kapat',
+                                            style: TextStyle(color: AppTheme.accentPurple, fontSize: 16, fontWeight: FontWeight.w600)),
+                                      ),
+                                      const SizedBox(height: 8),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }
                           },
                           itemBuilder: (_) => [
                             if (_isReplaying)
@@ -541,14 +620,21 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                 ]),
                               )
                             else ...[
+                              const PopupMenuItem(
+                                value: 'photo',
+                                child: Row(children: [
+                                  Icon(Icons.image_rounded, color: AppTheme.accentBlue, size: 20),
+                                  SizedBox(width: 10),
+                                  Text('Orijinal Fotoğrafı Gör', style: TextStyle(color: AppTheme.textPrimary)),
+                                ]),
+                              ),
                               if (_paintHistory.isNotEmpty)
                                 const PopupMenuItem(
                                   value: 'replay',
                                   child: Row(children: [
                                     Icon(Icons.replay_rounded, color: AppTheme.accentPurple, size: 20),
                                     SizedBox(width: 10),
-                                    Text('Boyamayı Tekrar İzle',
-                                        style: TextStyle(color: AppTheme.textPrimary)),
+                                    Text('Boyamayı Tekrar İzle', style: TextStyle(color: AppTheme.textPrimary)),
                                   ]),
                                 ),
                               const PopupMenuItem(
@@ -556,8 +642,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                 child: Row(children: [
                                   Icon(Icons.download_rounded, color: AppTheme.accentGreen, size: 20),
                                   SizedBox(width: 10),
-                                  Text('Galeriye Kaydet',
-                                      style: TextStyle(color: AppTheme.textPrimary)),
+                                  Text('Galeriye Kaydet', style: TextStyle(color: AppTheme.textPrimary)),
                                 ]),
                               ),
                             ],
@@ -658,7 +743,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               if (_isCompleted && !_isReplaying)
                 _CompletionOverlay(
                   animation: _completionAnimation,
-                  paintCount: _paintHistory.length,
+                  paintCount: _coloredCells, // total from both players
+                  myPaintCount: _myBrushStrokes,
+                  isMultiplayer: !widget.isSolo,
                   onGoHome: () => Navigator.popUntil(context, (route) => route.isFirst),
                   onReplay: _paintHistory.isNotEmpty ? _startReplay : null,
                   onSave: _saveToGallery,
@@ -683,12 +770,16 @@ class _CompletionOverlay extends AnimatedWidget {
   final VoidCallback? onReplay;
   final VoidCallback onSave;
   final int paintCount;
+  final int myPaintCount;
+  final bool isMultiplayer;
 
   const _CompletionOverlay({
     required Animation<double> animation,
     required this.onGoHome,
     required this.onSave,
     required this.paintCount,
+    required this.myPaintCount,
+    required this.isMultiplayer,
     this.onReplay,
   }) : super(listenable: animation);
 
@@ -753,13 +844,46 @@ class _CompletionOverlay extends AnimatedWidget {
                     textAlign: TextAlign.center,
                   ),
                   if (paintCount > 0) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      '$paintCount fırça darbesi',
-                      style: const TextStyle(
-                        color: AppTheme.accentPurple,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardDark,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppTheme.borderDark),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.brush_rounded, color: AppTheme.accentPurple, size: 16),
+                              const SizedBox(width: 6),
+                              Text(
+                                isMultiplayer
+                                    ? 'Toplam $paintCount fırça darbesi'
+                                    : '$paintCount fırça darbesi',
+                                style: const TextStyle(
+                                  color: AppTheme.accentPurple,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (isMultiplayer) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              'Senin katkın: $myPaintCount darbe  •  Diğer oyuncu: ${paintCount - myPaintCount} darbe',
+                              style: const TextStyle(
+                                color: AppTheme.textSecondary,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ],

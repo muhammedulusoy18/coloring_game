@@ -41,31 +41,24 @@ class ImageProcessorService {
     img.Image? original = img.decodeImage(imageBytes);
     if (original == null) throw Exception('Could not decode image');
 
-    // Boost contrast & saturation before quantizing — makes colors more distinct
-    img.Image enhanced = img.adjustColor(
-      original,
-      saturation: 1.35,
-      contrast: 1.15,
-    );
-
     // Calculate target dimensions maintaining aspect ratio
     int targetWidth, targetHeight;
-    if (enhanced.width >= enhanced.height) {
+    if (original.width >= original.height) {
       targetWidth = maxGridSize;
-      targetHeight = (enhanced.height * maxGridSize / enhanced.width).round();
+      targetHeight = (original.height * maxGridSize / original.width).round();
     } else {
       targetHeight = maxGridSize;
-      targetWidth = (enhanced.width * maxGridSize / enhanced.height).round();
+      targetWidth = (original.width * maxGridSize / original.height).round();
     }
     targetWidth = targetWidth.clamp(4, maxGridSize);
     targetHeight = targetHeight.clamp(4, maxGridSize);
 
-    // Downscale
+    // Downscale using linear interpolation to prevent muddy colors
     img.Image resized = img.copyResize(
-      enhanced,
+      original,
       width: targetWidth,
       height: targetHeight,
-      interpolation: img.Interpolation.average,
+      interpolation: img.Interpolation.linear,
     );
 
     // Extract pixel colors
@@ -80,8 +73,9 @@ class ImageProcessorService {
     // Quantize with more passes for better color separation
     List<List<int>> palette = _medianCutQuantize(pixelColors, maxColors);
 
-    // Remove near-duplicate palette colors (merge colors within threshold)
-    palette = _mergeSimilarColors(palette, threshold: 1200);
+    // Remove near-duplicate palette colors (merge colors within strict threshold)
+    // 200 means distance ~14, so it only merges practically identical colors
+    palette = _mergeSimilarColors(palette, threshold: 200);
 
     // Map pixels to palette
     Map<String, int> gridData = {};
