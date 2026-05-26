@@ -1,0 +1,32 @@
+name: color_by_number
+description: A two-player online color by number game with real-time co-op.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  firebase_core: ^3.12.1
+  firebase_database: ^11.3.5
+  image_picker: ^1.1.2
+  image: ^4.5.3
+  uuid: ^4.5.1
+  google_fonts: ^6.2.1
+  google_mobile_ads: ^8.0.0
+  gal: ^2.3.0
+  path_provider: ^2.1.5
+  vector_math: ^2.1.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/
