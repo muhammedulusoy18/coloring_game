@@ -56,3 +56,5 @@ google-services.json
 GoogleService-Info.plist
 firebase_options.dart
 firebase-config.json
+
+lib/config/app_config.dart

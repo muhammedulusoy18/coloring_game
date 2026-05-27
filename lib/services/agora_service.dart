@@ -1,8 +1,10 @@
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../config/app_config.dart';
+
 class AgoraService {
-  static const String appId = '9124238526b34c90a44fcc2c6181a75b';
+  static const String appId = AppConfig.agoraAppId;
   late RtcEngine _engine;
   bool isJoined = false;
   bool isMuted = false;
