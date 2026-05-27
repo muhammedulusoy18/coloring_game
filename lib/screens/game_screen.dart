@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:gal/gal.dart';
 import '../services/firebase_service.dart';
 import '../services/ad_service.dart';
+import '../services/agora_service.dart';
 import '../utils/app_theme.dart';
 import '../widgets/color_palette_bar.dart';
 import '../widgets/pixel_grid.dart';
@@ -52,6 +53,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   // For gesture coordinate conversion
   final TransformationController _transformController = TransformationController();
 
+  // Agora Voice
+  final AgoraService _agoraService = AgoraService();
+  bool _isMicMuted = false;
+  int _remoteUserCount = 0;
+
   // Replay state
   bool _isReplaying = false;
   Map<String, int> _replayCellStates = {};
@@ -77,10 +83,32 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       curve: Curves.elasticOut,
     );
     _loadGameData();
+    if (!widget.isSolo) {
+      _initVoiceChat();
+    }
+  }
+
+  Future<void> _initVoiceChat() async {
+    await _agoraService.initializeAndJoin(
+      widget.roomId,
+      onUserJoined: (uid) {
+        if (mounted) setState(() => _remoteUserCount++);
+      },
+      onUserOffline: (uid) {
+        if (mounted) {
+          setState(() {
+            _remoteUserCount = (_remoteUserCount > 0) ? _remoteUserCount - 1 : 0;
+          });
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
+    if (!widget.isSolo) {
+      _agoraService.leaveChannel();
+    }
     _roomSub?.cancel();
     _cellAddSub?.cancel();
     _cellChangeSub?.cancel();
@@ -385,6 +413,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
+              if (!widget.isSolo) _agoraService.leaveChannel();
               if (widget.isHost) FirebaseService.deleteRoom(widget.roomId);
               Navigator.popUntil(context, (route) => route.isFirst);
             },
@@ -525,6 +554,36 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                             ),
                           ),
                         ),
+                        if (!widget.isSolo) ...[
+                          const SizedBox(width: 4),
+                          Stack(
+                            alignment: Alignment.topRight,
+                            children: [
+                              IconButton(
+                                icon: Icon(
+                                  _isMicMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                                  color: _isMicMuted ? const Color(0xFFF85149) : AppTheme.accentGreen,
+                                ),
+                                onPressed: () async {
+                                  await _agoraService.toggleMute();
+                                  setState(() {
+                                    _isMicMuted = _agoraService.isMuted;
+                                  });
+                                },
+                              ),
+                              if (_remoteUserCount > 0)
+                                Container(
+                                  margin: const EdgeInsets.only(top: 8, right: 8),
+                                  width: 8,
+                                  height: 8,
+                                  decoration: const BoxDecoration(
+                                    color: AppTheme.accentGreen,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(width: 4),
                         // Action menu
                         PopupMenuButton<String>(

@@ -66,5 +66,8 @@
 	<string>Boyama için galerinizden fotoğraf seçmenizi sağlar.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Tamamlanan boyamayı galerinize kaydetmek için.</string>
+	<!-- Agora Voice Calling -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Co-op oynarken takım arkadaşınızla sesli konuşabilmeniz için mikrofona ihtiyacımız var.</string>
 </dict>
 </plist>
