@@ -98,6 +98,15 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
       // _selectedDifficulty is no longer changed here!
     });
 
+    try {
+      final data = await rootBundle.load('assets/templates/$filename.png');
+      final bytes = data.buffer.asUint8List();
+      await _processImageBytes(bytes);
+    } catch (e) {
+      _handleProcessingError(e);
+    }
+  }
+
   Future<void> _processImageBytes(Uint8List bytes) async {
     setState(() {
       _processingProgress = 0.3;
