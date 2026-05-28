@@ -98,15 +98,6 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
       // _selectedDifficulty is no longer changed here!
     });
 
-    try {
-      final data = await rootBundle.load('assets/templates/$filename.png');
-      final bytes = data.buffer.asUint8List();
-      await _processImageBytes(bytes);
-    } catch (e) {
-      _handleProcessingError(e);
-    }
-  }
-
   Future<void> _processImageBytes(Uint8List bytes) async {
     setState(() {
       _processingProgress = 0.3;
@@ -486,85 +477,29 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
                     ),
                   ),
                   const SizedBox(height: 16),
-                  // Hazır Şablonlar
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppTheme.surfaceDark,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: AppTheme.borderDark),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Hazır Şablonlardan Seç',
-                          style: TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        GridView.count(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          crossAxisCount: 3,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                          childAspectRatio: 0.9,
-                          children: [
-                            _buildTemplateCard('Köpek', 'dog', AppTheme.accentOrange),
-                            _buildTemplateCard('Kedi', 'cat', AppTheme.accentPurple),
-                            _buildTemplateCard('Ev', 'house', AppTheme.accentGreen),
-                            _buildTemplateCard('Çiçek', 'flower', AppTheme.accentPink),
-                            _buildTemplateCard('Araba', 'car', AppTheme.accentBlue),
-                            _buildTemplateCard('Roket', 'rocket', AppTheme.accentOrange),
-                            _buildTemplateCard('Kiraz', 'easy', AppTheme.accentGreen), 
-                            _buildTemplateCard('Gitar', 'medium', AppTheme.accentOrange), 
-                            _buildTemplateCard('Manzara', 'hard', AppTheme.accentPink), 
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 60,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: AppTheme.pinkGradient,
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppTheme.accentPink.withValues(alpha: 0.4),
-                            blurRadius: 24,
-                            offset: const Offset(0, 8),
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton.icon(
-                        onPressed: _pickAndProcessImage,
-                        icon: const Icon(Icons.photo_library_rounded, color: Colors.white),
-                        label: const Text(
-                          'Fotoğraf Seç ve Başla',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
-                          ),
+                  // Action Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildActionButton(
+                          icon: Icons.grid_view_rounded,
+                          label: 'Şablon Seç',
+                          onPressed: _showTemplatePicker,
+                          gradient: AppTheme.blueGradient,
+                          shadowColor: AppTheme.accentBlue,
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildActionButton(
+                          icon: Icons.photo_library_rounded,
+                          label: 'Galeriden',
+                          onPressed: _pickAndProcessImage,
+                          gradient: AppTheme.pinkGradient,
+                          shadowColor: AppTheme.accentPink,
+                        ),
+                      ),
+                    ],
                   ),
                 ] else if (widget.isHost && !hasGuest) ...[
                   _WaitingDotsWidget(
@@ -683,9 +618,107 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
     );
   }
 
-  Widget _buildTemplateCard(String label, String templateName, Color color) {
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required Gradient gradient,
+    required Color shadowColor,
+  }) {
+    return SizedBox(
+      height: 60,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: gradient,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: shadowColor.withValues(alpha: 0.4),
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ElevatedButton.icon(
+          onPressed: onPressed,
+          icon: Icon(icon, color: Colors.white, size: 20),
+          label: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTemplatePicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surfaceDark,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (bottomSheetContext) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Bir Şablon Seç',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 20),
+              GridView.count(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                crossAxisCount: 3,
+                mainAxisSpacing: 12,
+                crossAxisSpacing: 12,
+                childAspectRatio: 0.9,
+                children: [
+                  _buildTemplateCard('Köpek', 'dog', AppTheme.accentOrange, bottomSheetContext),
+                  _buildTemplateCard('Kedi', 'cat', AppTheme.accentPurple, bottomSheetContext),
+                  _buildTemplateCard('Ev', 'house', AppTheme.accentGreen, bottomSheetContext),
+                  _buildTemplateCard('Çiçek', 'flower', AppTheme.accentPink, bottomSheetContext),
+                  _buildTemplateCard('Araba', 'car', AppTheme.accentBlue, bottomSheetContext),
+                  _buildTemplateCard('Roket', 'rocket', AppTheme.accentOrange, bottomSheetContext),
+                  _buildTemplateCard('Kiraz', 'easy', AppTheme.accentGreen, bottomSheetContext), 
+                  _buildTemplateCard('Gitar', 'medium', AppTheme.accentOrange, bottomSheetContext), 
+                  _buildTemplateCard('Manzara', 'hard', AppTheme.accentPink, bottomSheetContext), 
+                ],
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildTemplateCard(String label, String templateName, Color color, [BuildContext? bottomSheetContext]) {
     return GestureDetector(
-      onTap: () => _pickTemplate(templateName),
+      onTap: () {
+        if (bottomSheetContext != null) {
+          Navigator.pop(bottomSheetContext);
+        }
+        _pickTemplate(templateName);
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
