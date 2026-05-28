@@ -43,6 +43,8 @@ class AgoraService {
 
     // 4. Enable audio and join channel
     await _engine.enableAudio();
+    // Route audio to speaker (loudspeaker) instead of earpiece
+    await _engine.setDefaultAudioRouteToSpeakerphone(true);
     // Using an empty token for testing. Note: If your project enables App Certificate, you MUST generate a token from your server.
     await _engine.joinChannel(
       token: '',

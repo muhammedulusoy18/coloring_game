@@ -11,6 +11,7 @@ class GameRoom {
   Map<String, int?> cellStates; // 'x_y' -> paletteIndex or null (uncolored)
   int totalCells;
   int coloredCells;
+  Map<dynamic, dynamic>? lastReaction;
 
   GameRoom({
     required this.roomId,
@@ -25,6 +26,7 @@ class GameRoom {
     this.cellStates = const {},
     this.totalCells = 0,
     this.coloredCells = 0,
+    this.lastReaction,
   });
 
   // toJson and fromJson methods for Firebase
@@ -39,6 +41,7 @@ class GameRoom {
     'palette': palette,
     'totalCells': totalCells,
     'coloredCells': coloredCells,
+    if (lastReaction != null) 'lastReaction': lastReaction,
   };
 
   factory GameRoom.fromJson(Map<dynamic, dynamic> json) {
@@ -53,6 +56,7 @@ class GameRoom {
       palette: (json['palette'] as List?)?.map((e) => (e as num).toInt()).toList() ?? [],
       totalCells: (json['totalCells'] as num?)?.toInt() ?? 0,
       coloredCells: (json['coloredCells'] as num?)?.toInt() ?? 0,
+      lastReaction: json['lastReaction'] as Map<dynamic, dynamic>?,
     );
   }
 }

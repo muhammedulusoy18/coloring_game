@@ -1,7 +1,13 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:ui' as ui;
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:gal/gal.dart';
+import 'package:image/image.dart' as img;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../services/firebase_service.dart';
 import '../services/ad_service.dart';
 import '../services/agora_service.dart';
@@ -58,6 +64,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _isMicMuted = false;
   int _remoteUserCount = 0;
 
+  // Emoji Reactions
+  int _lastReactionTimestamp = 0;
+  final List<_ActiveEmoji> _floatingEmojis = [];
+
+  // Sihirli Değnek
+  int _wandCharges = 0;
+  bool _isWandAnimating = false;
+
   // Replay state
   bool _isReplaying = false;
   Map<String, int> _replayCellStates = {};
@@ -83,6 +97,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       curve: Curves.elasticOut,
     );
     _loadGameData();
+    AdService.loadRewardedAd(); // Preload rewarded ad for magic wand
     if (!widget.isSolo) {
       _initVoiceChat();
     }
@@ -128,6 +143,21 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           _totalCells = room.totalCells;
           _buildColorTotals();
         });
+
+        if (room.lastReaction != null) {
+          final int ts = room.lastReaction!['timestamp'] ?? 0;
+          if (ts > _lastReactionTimestamp) {
+            // Sadece yeni atılanları animasyonla oynat (5 saniye içi)
+            if (_lastReactionTimestamp != 0 || (DateTime.now().millisecondsSinceEpoch - ts < 5000)) {
+              // Kendi attığımızı zaten lokal olarak trigger ettiğimiz için tekrar etmesini önleyebiliriz ama
+              // senderId kontrolüyle bunu yapmak daha sağlıklı olur:
+              if (room.lastReaction!['senderId'] != widget.playerId) {
+                _triggerReaction(room.lastReaction!['emoji']);
+              }
+            }
+            _lastReactionTimestamp = ts;
+          }
+        }
       }
     });
 
@@ -257,6 +287,121 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _checkCompletion();
     }
     // Wrong color: silent (no snackbar spam during drag)
+  }
+
+  // ── Sihirli Değnek ─────────────────────────────────────────────
+  void _showWandDialog() {
+    if (_wandCharges > 0) {
+      _useWand();
+      return;
+    }
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: AppTheme.borderDark),
+        ),
+        title: const Row(
+          children: [
+            Text('✨', style: TextStyle(fontSize: 28)),
+            SizedBox(width: 8),
+            Text('Sihirli Değnek', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: const Text(
+          'Kısa bir reklam izleyerek 3 adet Sihirli Değnek hakkı kazanabilirsiniz!\n\nHer değnek rastgele bir pikseli otomatik boyar.',
+          style: TextStyle(color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal', style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _watchAdForWand();
+            },
+            icon: const Icon(Icons.play_circle_filled, color: Colors.white, size: 20),
+            label: const Text('Reklam İzle', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.accentPurple,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _watchAdForWand() {
+    AdService.showRewardedAd(
+      onRewarded: () {
+        setState(() => _wandCharges += 3);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Text('✨', style: TextStyle(fontSize: 20)),
+                SizedBox(width: 8),
+                Text('3 Sihirli Değnek kazandınız!'),
+              ],
+            ),
+            backgroundColor: AppTheme.accentPurple,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      },
+      onDismissed: () {},
+    );
+  }
+
+  void _useWand() {
+    if (_wandCharges <= 0 || _isWandAnimating) return;
+
+    // Boyanmamış rastgele bir hücre bul
+    final uncoloredCells = <String>[];
+    for (final entry in _gridData.entries) {
+      if (!_cellStates.containsKey(entry.key)) {
+        uncoloredCells.add(entry.key);
+      }
+    }
+
+    if (uncoloredCells.isEmpty) return;
+
+    final randomCell = uncoloredCells[Random().nextInt(uncoloredCells.length)];
+    final correctColor = _gridData[randomCell]!;
+    final parts = randomCell.split('_');
+    final x = int.parse(parts[0]);
+    final y = int.parse(parts[1]);
+
+    setState(() {
+      _wandCharges--;
+      _isWandAnimating = true;
+      _cellStates[randomCell] = correctColor;
+      _coloredCells = _cellStates.length;
+      _myBrushStrokes++;
+      _paintHistory.add(_PaintStep(cellKey: randomCell, colorIndex: correctColor));
+      _updateCompletedColors();
+    });
+
+    FirebaseService.colorCell(
+      roomId: widget.roomId,
+      x: x,
+      y: y,
+      colorIndex: correctColor,
+      playerId: widget.playerId,
+    );
+
+    _checkCompletion();
+
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) setState(() => _isWandAnimating = false);
+    });
   }
 
   void _autoAdvanceColor() {
@@ -421,6 +566,155 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 style: TextStyle(color: Color(0xFFF85149), fontWeight: FontWeight.w600)),
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _exportTimeLapse() async {
+    if (_paintHistory.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Henüz hiçbir hücre boyanmadı'),
+          backgroundColor: AppTheme.accentOrange,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        content: Row(
+          children: [
+            CircularProgressIndicator(color: AppTheme.accentPurple),
+            SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                'Hızlı Çekim (GIF) hazırlanıyor...\nBu işlem biraz sürebilir.',
+                style: TextStyle(color: AppTheme.textPrimary),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final int scale = 4;
+      final w = _gridWidth * scale;
+      final h = _gridHeight * scale;
+
+      final animation = img.Image(width: w, height: h);
+      
+      final int totalFrames = min(20, _paintHistory.length);
+      final double stepSize = _paintHistory.length / totalFrames;
+      
+      Map<String, int> currentStates = {};
+      
+      for (int i = 0; i <= totalFrames; i++) {
+        int historyIndex = (i * stepSize).round();
+        if (historyIndex > _paintHistory.length) historyIndex = _paintHistory.length;
+        if (historyIndex == 0 && i > 0) continue;
+        
+        for (int j = currentStates.length; j < historyIndex; j++) {
+          final step = _paintHistory[j];
+          currentStates[step.cellKey] = step.colorIndex;
+        }
+        
+        final frame = img.Image(width: w, height: h);
+        
+        for (int y = 0; y < _gridHeight; y++) {
+          for (int x = 0; x < _gridWidth; x++) {
+            final key = '${x}_$y';
+            if (currentStates.containsKey(key)) {
+              final ci = currentStates[key]!;
+              if (ci < _palette.length) {
+                final colorVal = _palette[ci];
+                final r = (colorVal >> 16) & 0xFF;
+                final g = (colorVal >> 8) & 0xFF;
+                final b = colorVal & 0xFF;
+                img.fillRect(frame, x1: x * scale, y1: y * scale, x2: x * scale + scale - 1, y2: y * scale + scale - 1, color: img.ColorRgb8(r, g, b));
+              }
+            } else {
+              img.fillRect(frame, x1: x * scale, y1: y * scale, x2: x * scale + scale - 1, y2: y * scale + scale - 1, color: img.ColorRgb8(245, 242, 236)); 
+            }
+          }
+        }
+        
+        if (i == 0) {
+           animation.frames[0] = frame;
+           animation.frames[0].frameDuration = 200;
+        } else {
+           frame.frameDuration = 200;
+           animation.addFrame(frame);
+        }
+      }
+      
+      final gifBytes = await compute(_encodeGifIsolate, animation);
+      
+      if (mounted) Navigator.pop(context); // close dialog
+      
+      if (gifBytes != null) {
+        final tempDir = await getTemporaryDirectory();
+        final file = File('${tempDir.path}/timelapse.gif');
+        await file.writeAsBytes(gifBytes);
+        await Share.shareXFiles([XFile(file.path)], text: 'Boyamamın hızlı çekimi!');
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // close dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('GIF oluşturulurken hata: $e'),
+            backgroundColor: const Color(0xFFF85149),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  void _triggerReaction(String emoji) {
+    final id = DateTime.now().millisecondsSinceEpoch.toString() + Random().nextInt(1000).toString();
+    final startX = 0.1 + Random().nextDouble() * 0.8;
+    setState(() {
+      _floatingEmojis.add(_ActiveEmoji(id, emoji, startX));
+    });
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _floatingEmojis.removeWhere((e) => e.id == id);
+        });
+      }
+    });
+  }
+
+  Widget _buildFloatingEmoji(_ActiveEmoji activeEmoji) {
+    return Positioned(
+      left: MediaQuery.of(context).size.width * activeEmoji.startX,
+      bottom: 120,
+      child: TweenAnimationBuilder<double>(
+        key: ValueKey(activeEmoji.id),
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(seconds: 2),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) {
+          return Transform.translate(
+            offset: Offset(0, -value * 300),
+            child: Opacity(
+              opacity: 1.0 - value,
+              child: Text(
+                activeEmoji.emoji,
+                style: const TextStyle(fontSize: 48),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -597,6 +891,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                             if (val == 'replay') _startReplay();
                             if (val == 'save') _saveToGallery();
                             if (val == 'stop_replay') _stopReplay();
+                            if (val == 'timelapse') _exportTimeLapse();
                             if (val == 'photo') {
                               // Render painted grid to image
                               if (_cellStates.isEmpty) {
@@ -704,6 +999,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                   Text('Galeriye Kaydet', style: TextStyle(color: AppTheme.textPrimary)),
                                 ]),
                               ),
+                              if (_paintHistory.isNotEmpty)
+                                const PopupMenuItem(
+                                  value: 'timelapse',
+                                  child: Row(children: [
+                                    Icon(Icons.movie_creation_rounded, color: AppTheme.accentPink, size: 20),
+                                    SizedBox(width: 10),
+                                    Text('Hızlı Çekim Paylaş', style: TextStyle(color: AppTheme.textPrimary)),
+                                  ]),
+                                ),
                             ],
                           ],
                         ),
@@ -761,6 +1065,32 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       },
                     ),
 
+                  // Emoji Bar
+                  if (!widget.isSolo && !_isReplaying && !_isCompleted)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: ['❤️', '😂', '👍', '🔥', '👏'].map((emoji) {
+                          return GestureDetector(
+                            onTap: () {
+                              FirebaseService.sendEmoji(widget.roomId, emoji, widget.playerId);
+                              _triggerReaction(emoji); // Trigger locally immediately for better UX
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppTheme.cardDark,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: AppTheme.borderDark),
+                              ),
+                              child: Text(emoji, style: const TextStyle(fontSize: 24)),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
                   if (_isReplaying)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -809,6 +1139,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   onReplay: _paintHistory.isNotEmpty ? _startReplay : null,
                   onSave: _saveToGallery,
                 ),
+
+              // Floating Emojis
+              ..._floatingEmojis.map((e) => _buildFloatingEmoji(e)),
             ],
           ),
         ),
@@ -821,6 +1154,17 @@ class _PaintStep {
   final String cellKey;
   final int colorIndex;
   const _PaintStep({required this.cellKey, required this.colorIndex});
+}
+
+Uint8List? _encodeGifIsolate(img.Image animation) {
+  return img.encodeGif(animation);
+}
+
+class _ActiveEmoji {
+  final String id;
+  final String emoji;
+  final double startX;
+  _ActiveEmoji(this.id, this.emoji, this.startX);
 }
 
 // ── Completion Overlay ─────────────────────────────────────────────────────────

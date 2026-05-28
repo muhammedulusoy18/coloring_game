@@ -50,18 +50,27 @@ class FirebaseService {
     return GameRoom.fromJson(roomData);
   }
 
-  /// Join a room as guest
-  static Future<bool> joinRoom(String roomId, String guestId) async {
+  static Future<bool> joinRoom(String roomId, String playerId) async {
     final ref = _db.ref('rooms/$roomId');
     final snapshot = await ref.get();
     if (!snapshot.exists) return false;
 
     final data = snapshot.value as Map<dynamic, dynamic>;
-    if (data['guestId'] != null) return false; // Room full
-    if (data['status'] != 'waiting') return false;
+    final hostId = data['hostId'];
+    final guestId = data['guestId'];
+    final status = data['status'];
+
+    // Eğer odaya dönen kişi host veya önceden katılmış guest ise kabul et
+    if (playerId == hostId || playerId == guestId) {
+      return true;
+    }
+
+    // Yeni birisiyse ve oda doluysa veya oyun çoktan başladıysa reddet
+    if (guestId != null) return false; // Oda dolu
+    if (status != 'waiting') return false; // Oyun çoktan başlamış
 
     await ref.update({
-      'guestId': guestId,
+      'guestId': playerId,
     });
     return true;
   }
@@ -98,6 +107,18 @@ class FirebaseService {
       'totalCells': width * height,
       'coloredCells': 0,
       'status': 'playing',
+    });
+  }
+
+  /// Send an emoji reaction to the room
+  static Future<void> sendEmoji(String roomId, String emoji, String senderId) async {
+    final ref = _db.ref('rooms/$roomId');
+    await ref.update({
+      'lastReaction': {
+        'emoji': emoji,
+        'senderId': senderId,
+        'timestamp': ServerValue.timestamp, // Use server timestamp to avoid local clock sync issues
+      }
     });
   }
 

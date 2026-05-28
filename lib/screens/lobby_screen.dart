@@ -84,64 +84,92 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
 
     try {
       final bytes = await File(pickedFile.path).readAsBytes();
-
-      setState(() {
-        _processingProgress = 0.3;
-        _processingStatus = 'Piksel grid\'e dönüştürülüyor...';
-      });
-
-      final result = await ImageProcessorService.processImage(
-        bytes,
-        difficulty: _selectedDifficulty,
-      );
-
-      setState(() {
-        _processingProgress = 0.6;
-        _processingStatus = 'Renk paleti oluşturuluyor...';
-      });
-
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      setState(() {
-        _processingProgress = 0.8;
-        _processingStatus = 'Firebase\'e yükleniyor...';
-      });
-
-      await FirebaseService.uploadGridData(
-        roomId: _room.roomId,
-        width: result.width,
-        height: result.height,
-        palette: result.palette,
-        gridData: result.gridData,
-        imageBytes: bytes,
-      );
-
-      setState(() {
-        _processingProgress = 1.0;
-        _processingStatus = 'Hazır! Oyun başlıyor...';
-      });
-
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      if (mounted) {
-        _navigateToGame();
-      }
+      await _processImageBytes(bytes);
     } catch (e) {
-      setState(() {
-        _isProcessingImage = false;
-        _processingProgress = 0;
-        _processingStatus = '';
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Görsel işleme hatası: $e'),
-            backgroundColor: const Color(0xFFF85149),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
+      _handleProcessingError(e);
+    }
+  }
+
+  Future<void> _pickTemplate(String difficultyStr) async {
+    setState(() {
+      _isProcessingImage = true;
+      _processingProgress = 0.1;
+      _processingStatus = 'Şablon yükleniyor...';
+      
+      // Auto-select difficulty based on template
+      if (difficultyStr == 'easy') _selectedDifficulty = GameDifficulty.easy;
+      else if (difficultyStr == 'medium') _selectedDifficulty = GameDifficulty.medium;
+      else if (difficultyStr == 'hard') _selectedDifficulty = GameDifficulty.hard;
+    });
+
+    try {
+      final data = await rootBundle.load('assets/templates/$difficultyStr.png');
+      final bytes = data.buffer.asUint8List();
+      await _processImageBytes(bytes);
+    } catch (e) {
+      _handleProcessingError(e);
+    }
+  }
+
+  Future<void> _processImageBytes(Uint8List bytes) async {
+    setState(() {
+      _processingProgress = 0.3;
+      _processingStatus = 'Piksel grid\'e dönüştürülüyor...';
+    });
+
+    final result = await ImageProcessorService.processImage(
+      bytes,
+      difficulty: _selectedDifficulty,
+    );
+
+    setState(() {
+      _processingProgress = 0.6;
+      _processingStatus = 'Renk paleti oluşturuluyor...';
+    });
+
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    setState(() {
+      _processingProgress = 0.8;
+      _processingStatus = 'Firebase\'e yükleniyor...';
+    });
+
+    await FirebaseService.uploadGridData(
+      roomId: _room.roomId,
+      width: result.width,
+      height: result.height,
+      palette: result.palette,
+      gridData: result.gridData,
+      imageBytes: bytes,
+    );
+
+    setState(() {
+      _processingProgress = 1.0;
+      _processingStatus = 'Hazır! Oyun başlıyor...';
+    });
+
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (mounted) {
+      _navigateToGame();
+    }
+  }
+
+  void _handleProcessingError(dynamic e) {
+    setState(() {
+      _isProcessingImage = false;
+      _processingProgress = 0;
+      _processingStatus = '';
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Görsel işleme hatası: $e'),
+          backgroundColor: const Color(0xFFF85149),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
     }
   }
 
@@ -461,7 +489,47 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
+                  // Hazır Şablonlar
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceDark,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppTheme.borderDark),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Hazır Şablonlardan Seç',
+                          style: TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildTemplateCard('Kolay', 'easy', AppTheme.accentGreen),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildTemplateCard('Orta', 'medium', AppTheme.accentOrange),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildTemplateCard('Zor', 'hard', AppTheme.accentPink),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     height: 60,
@@ -612,6 +680,40 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildTemplateCard(String label, String templateName, Color color) {
+    return GestureDetector(
+      onTap: () => _pickTemplate(templateName),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Column(
+          children: [
+            Image.asset(
+              'assets/templates/$templateName.png',
+              width: 40,
+              height: 40,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Icon(Icons.image, color: color, size: 30),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

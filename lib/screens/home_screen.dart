@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/app_theme.dart';
 import '../services/firebase_service.dart';
 import '../services/ad_service.dart';
@@ -17,10 +18,13 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late AnimationController _pulseController;
   late Animation<double> _fadeAnimation;
   late Animation<double> _pulseAnimation;
-  final String _playerId = FirebaseService.generatePlayerId();
+  String _playerId = '';
   final TextEditingController _pinController = TextEditingController();
   bool _isJoining = false;
   bool _isBannerAdLoaded = false;
+  String? _lastRoomPin; // Son katılınan oda PIN'i
+  static const String _prefKeyLastPin = 'last_room_pin';
+  static const String _prefKeyPlayerId = 'player_id';
 
   @override
   void initState() {
@@ -43,6 +47,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
 
     _fadeController.forward();
+    _initSessionData();
     // Banner reklamı yükle
     AdService.loadBannerAd(onLoaded: () {
       if (mounted) setState(() => _isBannerAdLoaded = true);
@@ -57,7 +62,100 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  Future<void> _initSessionData() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Load or generate Player ID
+    String? savedId = prefs.getString(_prefKeyPlayerId);
+    if (savedId == null || savedId.isEmpty) {
+      savedId = FirebaseService.generatePlayerId();
+      await prefs.setString(_prefKeyPlayerId, savedId);
+    }
+    if (mounted) setState(() => _playerId = savedId!);
+
+    // Load username
+    String? username = prefs.getString('username');
+    if (username == null || username.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showNameDialog();
+      });
+    }
+
+    // Load last room PIN
+    final pin = prefs.getString(_prefKeyLastPin);
+    if (mounted && pin != null && pin.isNotEmpty) {
+      setState(() => _lastRoomPin = pin);
+    }
+  }
+
+  Future<void> _saveLastRoomPin(String pin) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_prefKeyLastPin, pin);
+  }
+
+  Future<void> _clearLastRoomPin() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_prefKeyLastPin);
+    if (mounted) setState(() => _lastRoomPin = null);
+  }
+
+  void _showNameDialog() {
+    final TextEditingController nameController = TextEditingController();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          backgroundColor: AppTheme.surfaceDark,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: const Text('Hoş Geldin!', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Oyunda görünmesi için bir isim belirle:', style: TextStyle(color: AppTheme.textMuted)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                autofocus: true,
+                style: const TextStyle(color: AppTheme.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Örn: PikselCengo',
+                  hintStyle: TextStyle(color: AppTheme.textMuted.withValues(alpha: 0.5)),
+                  filled: true,
+                  fillColor: AppTheme.cardDark,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                if (name.isNotEmpty) {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('username', name);
+                  if (mounted) Navigator.pop(context);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.accentGreen,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Başla', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _createRoom() async {
+    if (_playerId.isEmpty) return; // session tam yüklenmediyse bekle
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -68,6 +166,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
     try {
       final room = await FirebaseService.createRoom(_playerId);
+      
+      // Host da oluşturduğu odaya daha sonra geri dönebilmeli
+      await _saveLastRoomPin(room.pin);
+      if (mounted) setState(() => _lastRoomPin = room.pin);
+
       if (mounted) {
         Navigator.pop(context); // dismiss loading
         Navigator.push(
@@ -100,6 +203,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _playSolo() async {
+    if (_playerId.isEmpty) return;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -140,6 +244,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _joinRoom() async {
+    if (_playerId.isEmpty) return;
     final pin = _pinController.text.trim();
     if (pin.length != 6) {
       _showError('Lütfen 6 haneli PIN giriniz');
@@ -163,6 +268,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         return;
       }
 
+      // PIN'i kaydet — uygulama kapanırsa tekrar girebilsin
+      await _saveLastRoomPin(pin);
+      if (mounted) setState(() => _lastRoomPin = pin);
+
       if (mounted) {
         Navigator.push(
           context,
@@ -170,7 +279,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             pageBuilder: (_, __, ___) => LobbyScreen(
               room: room,
               playerId: _playerId,
-              isHost: false,
+              isHost: room.hostId == _playerId,
             ),
             transitionsBuilder: (_, anim, __, child) {
               return SlideTransition(
@@ -204,126 +313,137 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  void _showJoinDialog() {
-    _pinController.clear();
+  void _showJoinDialog({String? prefillPin}) {
+    _pinController.text = prefillPin ?? '';
+    final FocusNode focusNode = FocusNode();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: Container(
-          decoration: const BoxDecoration(
-            color: AppTheme.surfaceDark,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            border: Border(
-              top: BorderSide(color: AppTheme.borderDark),
-              left: BorderSide(color: AppTheme.borderDark),
-              right: BorderSide(color: AppTheme.borderDark),
-            ),
+      builder: (context) {
+        // Klavyeyi otomatik aç (tablet dahil)
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          focusNode.requestFocus();
+        });
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom,
           ),
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: AppTheme.textMuted,
-                  borderRadius: BorderRadius.circular(2),
-                ),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: AppTheme.surfaceDark,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              border: Border(
+                top: BorderSide(color: AppTheme.borderDark),
+                left: BorderSide(color: AppTheme.borderDark),
+                right: BorderSide(color: AppTheme.borderDark),
               ),
-              const SizedBox(height: 24),
-              Text(
-                'Odaya Katıl',
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.w700,
+            ),
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.textMuted,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Arkadaşının paylaştığı 6 haneli PIN\'i gir',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-              const SizedBox(height: 24),
-              TextField(
-                controller: _pinController,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 12,
-                  color: AppTheme.textPrimary,
+                const SizedBox(height: 24),
+                Text(
+                  'Odaya Katıl',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-                decoration: InputDecoration(
-                  counterText: '',
-                  hintText: '------',
-                  hintStyle: TextStyle(
+                const SizedBox(height: 8),
+                Text(
+                  'Arkadaşının paylaştığı 6 haneli PIN\'i gir',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 24),
+                TextField(
+                  controller: _pinController,
+                  focusNode: focusNode,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: false, signed: false),
+                  textInputAction: TextInputAction.done,
+                  maxLength: 6,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
                     fontSize: 32,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 12,
-                    color: AppTheme.textMuted.withValues(alpha: 0.3),
+                    color: AppTheme.textPrimary,
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: AppTheme.greenGradient,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.accentGreen.withValues(alpha: 0.3),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: ElevatedButton(
-                    onPressed: _isJoining ? null : () {
-                      Navigator.pop(context);
-                      _joinRoom();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                  decoration: InputDecoration(
+                    counterText: '',
+                    hintText: '------',
+                    hintStyle: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 12,
+                      color: AppTheme.textMuted.withValues(alpha: 0.3),
                     ),
-                    child: _isJoining
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text(
-                            'Katıl',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-            ],
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: AppTheme.greenGradient,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.accentGreen.withValues(alpha: 0.3),
+                          blurRadius: 20,
+                          offset: const Offset(0, 8),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: _isJoining ? null : () {
+                        focusNode.unfocus();
+                        Navigator.pop(context);
+                        _joinRoom();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: _isJoining
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Text(
+                              'Katıl',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -464,6 +584,69 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ),
                     ),
                   ),
+                  // Son Oda Geri Dön Banneri
+                  if (_lastRoomPin != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppTheme.accentPurple.withValues(alpha: 0.4)),
+                        color: AppTheme.accentPurple.withValues(alpha: 0.08),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.history_rounded, color: AppTheme.accentPurple, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Son oda: $_lastRoomPin',
+                                  style: const TextStyle(
+                                    color: AppTheme.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const Text(
+                                  'Kaldığın yere devam et',
+                                  style: TextStyle(
+                                    color: AppTheme.textMuted,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: () => _showJoinDialog(prefillPin: _lastRoomPin),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              backgroundColor: AppTheme.accentPurple.withValues(alpha: 0.2),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            child: const Text(
+                              'Geri Dön',
+                              style: TextStyle(
+                                color: AppTheme.accentPurple,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: _clearLastRoomPin,
+                            icon: const Icon(Icons.close_rounded, color: AppTheme.textMuted, size: 18),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 16),
                   // Solo Play Button
                   SizedBox(

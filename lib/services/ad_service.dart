@@ -73,4 +73,55 @@ class AdService {
     );
     _interstitialAd!.show();
   }
+
+  // ── Rewarded Reklam (Sihirli Değnek) ──────────────────────────
+  static RewardedAd? _rewardedAd;
+  static bool _isRewardedAdLoaded = false;
+
+  static bool get isRewardedAdReady => _isRewardedAdLoaded && _rewardedAd != null;
+
+  static void loadRewardedAd() {
+    RewardedAd.load(
+      adUnitId: 'ca-app-pub-3940256099942544/5224354917', // Test ID - gerçek ID ile değiştirin
+      request: const AdRequest(),
+      rewardedAdLoadCallback: RewardedAdLoadCallback(
+        onAdLoaded: (ad) {
+          _rewardedAd = ad;
+          _isRewardedAdLoaded = true;
+        },
+        onAdFailedToLoad: (error) {
+          _rewardedAd = null;
+          _isRewardedAdLoaded = false;
+        },
+      ),
+    );
+  }
+
+  static void showRewardedAd({required VoidCallback onRewarded, VoidCallback? onDismissed}) {
+    if (_rewardedAd == null) {
+      onDismissed?.call();
+      return;
+    }
+    _rewardedAd!.fullScreenContentCallback = FullScreenContentCallback(
+      onAdDismissedFullScreenContent: (ad) {
+        ad.dispose();
+        _rewardedAd = null;
+        _isRewardedAdLoaded = false;
+        loadRewardedAd(); // Preload next one
+        onDismissed?.call();
+      },
+      onAdFailedToShowFullScreenContent: (ad, error) {
+        ad.dispose();
+        _rewardedAd = null;
+        _isRewardedAdLoaded = false;
+        loadRewardedAd();
+        onDismissed?.call();
+      },
+    );
+    _rewardedAd!.show(
+      onUserEarnedReward: (ad, reward) {
+        onRewarded();
+      },
+    );
+  }
 }
