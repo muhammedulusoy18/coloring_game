@@ -1308,10 +1308,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                   Text('Orijinal Fotoğrafı Gör', style: TextStyle(color: AppTheme.textPrimary)),
                                 ]),
                               ),
-                              if (_paintHistory.isNotEmpty)
-                                const PopupMenuItem(
-                                  value: 'replay',
-                                  child: Row(children: [
                               const PopupMenuItem(
                                 value: 'replay',
                                 child: Row(children: [
@@ -1477,48 +1473,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   onGoHome: () => Navigator.popUntil(context, (route) => route.isFirst),
                   onReplay: _paintHistory.isNotEmpty ? _startReplay : null,
                   onSave: _saveToGallery,
-                ),
-
-              // Magic Wand Button
-              if (!_isCompleted && !_isReplaying)
-                Positioned(
-                  right: 16,
-                  bottom: widget.isSolo ? 100 : 160,
-                  child: FloatingActionButton(
-                    heroTag: 'wandBtn',
-                    onPressed: _showWandDialog,
-                    backgroundColor: AppTheme.surfaceDark,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: const BorderSide(color: AppTheme.borderDark),
-                    ),
-                    child: Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        const Text('✨', style: TextStyle(fontSize: 24)),
-                        if (_wandCharges > 0)
-                          Positioned(
-                            right: -5,
-                            top: -5,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              decoration: const BoxDecoration(
-                                color: AppTheme.accentPurple,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Text(
-                                '$_wandCharges',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
                 ),
 
               // Floating Emojis
