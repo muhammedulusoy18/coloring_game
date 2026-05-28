@@ -70,13 +70,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   final List<_ActiveEmoji> _floatingEmojis = [];
 
   // Sihirli Değnek
-  int _wandCharges = 0;
+  int _wandCharges = 3;
   bool _isWandAnimating = false;
 
-  // Güç Yükselticiler
-  int _hintCharges = 0;
-  int _bombCharges = 0;
-  int _fillCharges = 0;
+  // Güç Yükselticiler (başlangıç bonusu)
+  int _hintCharges = 2;
+  int _bombCharges = 1;
+  int _fillCharges = 1;
   String? _hintCellKey; // highlighted cell for hint
   Timer? _hintTimer;
 
