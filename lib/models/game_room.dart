@@ -2,7 +2,9 @@ class GameRoom {
   final String roomId;
   final String pin;
   final String hostId;
+  final String? hostName;
   String? guestId;
+  String? guestName;
   String status; // 'waiting', 'processing', 'playing', 'completed'
   int gridWidth;
   int gridHeight;
@@ -17,7 +19,9 @@ class GameRoom {
     required this.roomId,
     required this.pin,
     required this.hostId,
+    this.hostName,
     this.guestId,
+    this.guestName,
     this.status = 'waiting',
     this.gridWidth = 0,
     this.gridHeight = 0,
@@ -34,7 +38,9 @@ class GameRoom {
     'roomId': roomId,
     'pin': pin,
     'hostId': hostId,
+    'hostName': hostName,
     'guestId': guestId,
+    'guestName': guestName,
     'status': status,
     'gridWidth': gridWidth,
     'gridHeight': gridHeight,
@@ -49,7 +55,9 @@ class GameRoom {
       roomId: json['roomId'] ?? '',
       pin: json['pin'] ?? '',
       hostId: json['hostId'] ?? '',
+      hostName: json['hostName'],
       guestId: json['guestId'],
+      guestName: json['guestName'],
       status: json['status'] ?? 'waiting',
       gridWidth: (json['gridWidth'] as num?)?.toInt() ?? 0,
       gridHeight: (json['gridHeight'] as num?)?.toInt() ?? 0,

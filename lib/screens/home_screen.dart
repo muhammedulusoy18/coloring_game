@@ -19,6 +19,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   late Animation<double> _fadeAnimation;
   late Animation<double> _pulseAnimation;
   String _playerId = '';
+  String _username = '';
   final TextEditingController _pinController = TextEditingController();
   bool _isJoining = false;
   bool _isBannerAdLoaded = false;
@@ -79,6 +80,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showNameDialog();
       });
+    } else {
+      if (mounted) setState(() => _username = username);
     }
 
     // Load last room PIN
@@ -139,7 +142,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 if (name.isNotEmpty) {
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.setString('username', name);
-                  if (mounted) Navigator.pop(context);
+                  if (mounted) {
+                    setState(() => _username = name);
+                    Navigator.pop(context);
+                  }
                 }
               },
               style: ElevatedButton.styleFrom(
@@ -165,7 +171,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
 
     try {
-      final room = await FirebaseService.createRoom(_playerId);
+      final room = await FirebaseService.createRoom(_playerId, _username);
       
       // Host da oluşturduğu odaya daha sonra geri dönebilmeli
       await _saveLastRoomPin(room.pin);
@@ -212,7 +218,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
     );
     try {
-      final room = await FirebaseService.createRoom(_playerId);
+      final room = await FirebaseService.createRoom(_playerId, _username);
       if (mounted) {
         Navigator.pop(context);
         Navigator.push(
@@ -261,8 +267,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         return;
       }
 
-      final joined = await FirebaseService.joinRoom(room.roomId, _playerId);
-      if (!joined) {
+      final success = await FirebaseService.joinRoom(room.roomId, _playerId, _username);
+      if (!success) {
         _showError('Oda dolu veya aktif değil');
         setState(() => _isJoining = false);
         return;

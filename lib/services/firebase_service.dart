@@ -25,7 +25,7 @@ class FirebaseService {
   }
 
   /// Create a new game room
-  static Future<GameRoom> createRoom(String hostId) async {
+  static Future<GameRoom> createRoom(String hostId, String hostName) async {
     String pin = generatePin();
     String roomId = _uuid.v4().substring(0, 12);
 
@@ -33,6 +33,7 @@ class FirebaseService {
       roomId: roomId,
       pin: pin,
       hostId: hostId,
+      hostName: hostName,
     );
 
     await _db.ref('rooms/$roomId').set(room.toJson());
@@ -50,7 +51,7 @@ class FirebaseService {
     return GameRoom.fromJson(roomData);
   }
 
-  static Future<bool> joinRoom(String roomId, String playerId) async {
+  static Future<bool> joinRoom(String roomId, String playerId, String playerName) async {
     final ref = _db.ref('rooms/$roomId');
     final snapshot = await ref.get();
     if (!snapshot.exists) return false;
@@ -62,6 +63,12 @@ class FirebaseService {
 
     // Eğer odaya dönen kişi host veya önceden katılmış guest ise kabul et
     if (playerId == hostId || playerId == guestId) {
+      // İsmi güncelle (belki isim değiştirmiştir)
+      if (playerId == guestId) {
+        await ref.update({'guestName': playerName});
+      } else if (playerId == hostId) {
+        await ref.update({'hostName': playerName});
+      }
       return true;
     }
 
@@ -71,6 +78,7 @@ class FirebaseService {
 
     await ref.update({
       'guestId': playerId,
+      'guestName': playerName,
     });
     return true;
   }

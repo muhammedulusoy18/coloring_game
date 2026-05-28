@@ -15,6 +15,8 @@ import '../utils/app_theme.dart';
 import '../widgets/color_palette_bar.dart';
 import '../widgets/pixel_grid.dart';
 import '../widgets/powerups_bar.dart';
+import '../widgets/confetti_burst.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class GameScreen extends StatefulWidget {
   final String roomId;
@@ -80,6 +82,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   String? _hintCellKey; // highlighted cell for hint
   Timer? _hintTimer;
 
+  // Konfeti
+  bool _confettiActive = false;
+  Color _confettiColor = Colors.purpleAccent;
+
   // Replay state
   bool _isReplaying = false;
   Map<String, int> _replayCellStates = {};
@@ -105,7 +111,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       curve: Curves.elasticOut,
     );
     _loadGameData();
-    AdService.loadRewardedAd(); // Preload rewarded ad for magic wand
+    AdService.loadRewardedAd();
+    _loadDailyBonus();
     if (!widget.isSolo) {
       _initVoiceChat();
     }
@@ -229,6 +236,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         newCompleted.add(entry.key);
       }
     }
+    // Detect newly completed colors → trigger confetti
+    for (final colorIdx in newCompleted) {
+      if (!_completedColors.contains(colorIdx) && colorIdx < _palette.length) {
+        final c = Color(_palette[colorIdx]);
+        Future.microtask(() => _triggerConfetti(c));
+      }
+    }
     _completedColors = newCompleted;
   }
 
@@ -295,8 +309,52 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
       _checkCompletion();
     }
-    // Wrong color: silent (no snackbar spam during drag)
   }
+
+  // ── Günlük Bonus ────────────────────────────────────────────
+  Future<void> _loadDailyBonus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final lastDate = prefs.getString('daily_bonus_date') ?? '';
+    if (lastDate == today) return; // already claimed today
+
+    await prefs.setString('daily_bonus_date', today);
+    if (!mounted) return;
+
+    // Grant bonus charges on top of starter
+    setState(() {
+      _wandCharges += 3;
+      _hintCharges += 2;
+      _bombCharges += 1;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: const Row(children: [
+        Text('🎁', style: TextStyle(fontSize: 20)),
+        SizedBox(width: 8),
+        Expanded(child: Text('Günlük bonus! ✨×3 + 💡×2 + 💣×1 kazandın!')),
+      ]),
+      backgroundColor: const Color(0xFF4CAF50),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 3),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(16),
+    ));
+  }
+
+  // ── Konfeti ─────────────────────────────────────────────
+  void _triggerConfetti(Color color) {
+    if (!mounted) return;
+    setState(() {
+      _confettiColor = color;
+      _confettiActive = true;
+    });
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _confettiActive = false);
+    });
+  }
+
+
 
   void _useWand() {
     if (_wandCharges <= 0 || _isWandAnimating) return;
@@ -1419,6 +1477,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
               // Floating Emojis
               ..._floatingEmojis.map((e) => _buildFloatingEmoji(e)),
+
+              // Konfeti Overlay
+              Positioned.fill(
+                child: ConfettiBurst(
+                  primaryColor: _confettiColor,
+                  active: _confettiActive,
+                ),
+              ),
             ],
           ),
         ),

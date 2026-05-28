@@ -90,20 +90,16 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
     }
   }
 
-  Future<void> _pickTemplate(String difficultyStr) async {
+  Future<void> _pickTemplate(String filename) async {
     setState(() {
       _isProcessingImage = true;
       _processingProgress = 0.1;
       _processingStatus = 'Şablon yükleniyor...';
-      
-      // Auto-select difficulty based on template
-      if (difficultyStr == 'easy') _selectedDifficulty = GameDifficulty.easy;
-      else if (difficultyStr == 'medium') _selectedDifficulty = GameDifficulty.medium;
-      else if (difficultyStr == 'hard') _selectedDifficulty = GameDifficulty.hard;
+      // _selectedDifficulty is no longer changed here!
     });
 
     try {
-      final data = await rootBundle.load('assets/templates/$difficultyStr.png');
+      final data = await rootBundle.load('assets/templates/$filename.png');
       final bytes = data.buffer.asUint8List();
       await _processImageBytes(bytes);
     } catch (e) {
@@ -358,7 +354,7 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
                       _buildPlayerRow(
                         icon: Icons.star_rounded,
                         iconColor: AppTheme.accentOrange,
-                        label: 'Oda Sahibi',
+                        label: _room.hostName ?? 'Oda Sahibi',
                         isConnected: true,
                         isYou: widget.isHost,
                       ),
@@ -367,7 +363,7 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
                       _buildPlayerRow(
                         icon: Icons.person_rounded,
                         iconColor: AppTheme.accentBlue,
-                        label: hasGuest ? 'Oyuncu 2' : 'Bekleniyor...',
+                        label: hasGuest ? (_room.guestName ?? 'Oyuncu 2') : 'Bekleniyor...',
                         isConnected: hasGuest,
                         isYou: !widget.isHost && hasGuest,
                       ),
@@ -511,19 +507,23 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
                           ),
                         ),
                         const SizedBox(height: 10),
-                        Row(
+                        GridView.count(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 8,
+                          crossAxisSpacing: 8,
+                          childAspectRatio: 0.9,
                           children: [
-                            Expanded(
-                              child: _buildTemplateCard('Kolay', 'easy', AppTheme.accentGreen),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _buildTemplateCard('Orta', 'medium', AppTheme.accentOrange),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _buildTemplateCard('Zor', 'hard', AppTheme.accentPink),
-                            ),
+                            _buildTemplateCard('Köpek', 'dog', AppTheme.accentOrange),
+                            _buildTemplateCard('Kedi', 'cat', AppTheme.accentPurple),
+                            _buildTemplateCard('Ev', 'house', AppTheme.accentGreen),
+                            _buildTemplateCard('Çiçek', 'flower', AppTheme.accentPink),
+                            _buildTemplateCard('Araba', 'car', AppTheme.accentBlue),
+                            _buildTemplateCard('Roket', 'rocket', AppTheme.accentOrange),
+                            _buildTemplateCard('Kiraz', 'easy', AppTheme.accentGreen), 
+                            _buildTemplateCard('Gitar', 'medium', AppTheme.accentOrange), 
+                            _buildTemplateCard('Manzara', 'hard', AppTheme.accentPink), 
                           ],
                         ),
                       ],
