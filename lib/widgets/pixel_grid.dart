@@ -9,6 +9,7 @@ class PixelGrid extends StatefulWidget {
   final List<int> palette;
   final int selectedColorIndex;
   final void Function(int x, int y) onCellTap;
+  final String? hintCellKey;
 
   const PixelGrid({
     super.key,
@@ -19,6 +20,7 @@ class PixelGrid extends StatefulWidget {
     required this.palette,
     required this.selectedColorIndex,
     required this.onCellTap,
+    this.hintCellKey,
   });
 
   static double getCellSize(BuildContext context, int gridW, int gridH) {
@@ -79,6 +81,7 @@ class _PixelGridState extends State<PixelGrid> {
           cellStates: widget.cellStates,
           palette: widget.palette,
           selectedColorIndex: widget.selectedColorIndex,
+          hintCellKey: widget.hintCellKey,
           paintVersion: widget.cellStates.length,
         ),
       ),
@@ -96,6 +99,7 @@ class _PixelGridPainter extends CustomPainter {
   final List<int> palette;
   final int selectedColorIndex;
   final int paintVersion;
+  final String? hintCellKey;
 
   static const double _gap = 0.8;
 
@@ -108,6 +112,7 @@ class _PixelGridPainter extends CustomPainter {
     required this.palette,
     required this.selectedColorIndex,
     required this.paintVersion,
+    this.hintCellKey,
   });
 
   @override
@@ -207,6 +212,16 @@ class _PixelGridPainter extends CustomPainter {
               ..isAntiAlias = false;
             canvas.drawRect(rect, bp);
           }
+
+          // Hint cell highlight
+          if (hintCellKey == cellKey) {
+            final hp = Paint()
+              ..color = const Color(0xFFFFD700)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = (cellSize * 0.18).clamp(1.0, 3.5)
+              ..isAntiAlias = true;
+            canvas.drawRect(rect.inflate(hp.strokeWidth / 2), hp);
+          }
         }
       }
     }
@@ -216,6 +231,7 @@ class _PixelGridPainter extends CustomPainter {
   bool shouldRepaint(covariant _PixelGridPainter old) {
     return old.paintVersion != paintVersion ||
         old.selectedColorIndex != selectedColorIndex ||
+        old.hintCellKey != hintCellKey ||
         old.cellStates.length != cellStates.length;
   }
 }

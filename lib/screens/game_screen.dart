@@ -14,6 +14,7 @@ import '../services/agora_service.dart';
 import '../utils/app_theme.dart';
 import '../widgets/color_palette_bar.dart';
 import '../widgets/pixel_grid.dart';
+import '../widgets/powerups_bar.dart';
 
 class GameScreen extends StatefulWidget {
   final String roomId;
@@ -72,6 +73,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   int _wandCharges = 0;
   bool _isWandAnimating = false;
 
+  // Güç Yükselticiler
+  int _hintCharges = 0;
+  int _bombCharges = 0;
+  int _fillCharges = 0;
+  String? _hintCellKey; // highlighted cell for hint
+  Timer? _hintTimer;
+
   // Replay state
   bool _isReplaying = false;
   Map<String, int> _replayCellStates = {};
@@ -129,6 +137,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     _cellChangeSub?.cancel();
     _completionController.dispose();
     _replayTimer?.cancel();
+    _hintTimer?.cancel();
     _transformController.dispose();
     super.dispose();
   }
@@ -289,77 +298,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     // Wrong color: silent (no snackbar spam during drag)
   }
 
-  // ── Sihirli Değnek ─────────────────────────────────────────────
-  void _showWandDialog() {
-    if (_wandCharges > 0) {
-      _useWand();
-      return;
-    }
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surfaceDark,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: const BorderSide(color: AppTheme.borderDark),
-        ),
-        title: const Row(
-          children: [
-            Text('✨', style: TextStyle(fontSize: 28)),
-            SizedBox(width: 8),
-            Text('Sihirli Değnek', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w700)),
-          ],
-        ),
-        content: const Text(
-          'Kısa bir reklam izleyerek 3 adet Sihirli Değnek hakkı kazanabilirsiniz!\n\nHer değnek rastgele bir pikseli otomatik boyar.',
-          style: TextStyle(color: AppTheme.textSecondary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('İptal', style: TextStyle(color: AppTheme.textMuted)),
-          ),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _watchAdForWand();
-            },
-            icon: const Icon(Icons.play_circle_filled, color: Colors.white, size: 20),
-            label: const Text('Reklam İzle', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.accentPurple,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _watchAdForWand() {
-    AdService.showRewardedAd(
-      onRewarded: () {
-        setState(() => _wandCharges += 3);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Text('✨', style: TextStyle(fontSize: 20)),
-                SizedBox(width: 8),
-                Text('3 Sihirli Değnek kazandınız!'),
-              ],
-            ),
-            backgroundColor: AppTheme.accentPurple,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.all(16),
-          ),
-        );
-      },
-      onDismissed: () {},
-    );
-  }
-
   void _useWand() {
     if (_wandCharges <= 0 || _isWandAnimating) return;
 
@@ -421,7 +359,335 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     }
   }
 
-  // ── Replay ─────────────────────────────────────────────────────
+  // ── Güç Yükselticiler ──────────────────────────────────────────
+
+  void _showPowerupDialog(PowerupType type) {
+    // If charges available, use directly
+    final hasCharge = switch (type) {
+      PowerupType.wand => _wandCharges > 0,
+      PowerupType.hint => _hintCharges > 0,
+      PowerupType.bomb => _bombCharges > 0,
+      PowerupType.fill => _fillCharges > 0,
+    };
+
+    if (hasCharge) {
+      _usePowerup(type);
+      return;
+    }
+
+    final info = switch (type) {
+      PowerupType.wand => (
+          emoji: '✨',
+          name: 'Sihirli Değnek',
+          desc: 'Rastgele bir pikseli otomatik boyar.',
+          reward: '3 Sihirli Değnek',
+          color: const Color(0xFFB388FF),
+        ),
+      PowerupType.hint => (
+          emoji: '💡',
+          name: 'İpucu',
+          desc: 'Seçili rengin boyanmamış bir hücresini 2 saniye boyunca vurgular.',
+          reward: '2 İpucu',
+          color: const Color(0xFFFFD54F),
+        ),
+      PowerupType.bomb => (
+          emoji: '💣',
+          name: 'Boya Bombası',
+          desc: 'Seçili rengin rastgele 10 hücresini otomatik boyar.',
+          reward: '1 Bomba',
+          color: const Color(0xFFFF7043),
+        ),
+      PowerupType.fill => (
+          emoji: '🎨',
+          name: 'Renk Tamamlayıcı',
+          desc: 'Seçili rengin tüm kalan hücrelerini otomatik tamamlar.',
+          reward: '1 Tamamlayıcı',
+          color: const Color(0xFF4DD0E1),
+        ),
+    };
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: BorderSide(color: info.color.withValues(alpha: 0.4)),
+        ),
+        title: Row(
+          children: [
+            Text(info.emoji, style: const TextStyle(fontSize: 28)),
+            const SizedBox(width: 8),
+            Text(info.name,
+                style: const TextStyle(
+                    color: AppTheme.textPrimary, fontWeight: FontWeight.w700)),
+          ],
+        ),
+        content: Text(
+          '${info.desc}\n\nKısa bir reklam izleyerek ${info.reward} kazanabilirsiniz!',
+          style: const TextStyle(color: AppTheme.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('İptal',
+                style: TextStyle(color: AppTheme.textMuted)),
+          ),
+          ElevatedButton.icon(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _watchAdForPowerup(type);
+            },
+            icon: const Icon(Icons.play_circle_filled,
+                color: Colors.white, size: 20),
+            label: const Text('Reklam İzle',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.w700)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: info.color,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _watchAdForPowerup(PowerupType type) {
+    AdService.showRewardedAd(
+      onRewarded: () {
+        setState(() {
+          switch (type) {
+            case PowerupType.wand:
+              _wandCharges += 3;
+            case PowerupType.hint:
+              _hintCharges += 2;
+            case PowerupType.bomb:
+              _bombCharges += 1;
+            case PowerupType.fill:
+              _fillCharges += 1;
+          }
+        });
+        final (emoji, msg, color) = switch (type) {
+          PowerupType.wand => ('✨', '3 Sihirli Değnek kazandınız!', const Color(0xFFB388FF)),
+          PowerupType.hint => ('💡', '2 İpucu kazandınız!', const Color(0xFFFFD54F)),
+          PowerupType.bomb => ('💣', '1 Boya Bombası kazandınız!', const Color(0xFFFF7043)),
+          PowerupType.fill => ('🎨', '1 Renk Tamamlayıcı kazandınız!', const Color(0xFF4DD0E1)),
+        };
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Row(children: [
+              Text(emoji, style: const TextStyle(fontSize: 20)),
+              const SizedBox(width: 8),
+              Text(msg),
+            ]),
+            backgroundColor: color,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(16),
+          ));
+        }
+      },
+      onDismissed: () {},
+    );
+  }
+
+  void _usePowerup(PowerupType type) {
+    switch (type) {
+      case PowerupType.wand:
+        _useWand();
+      case PowerupType.hint:
+        _useHint();
+      case PowerupType.bomb:
+        _useBomb();
+      case PowerupType.fill:
+        _useFill();
+    }
+  }
+
+  // İpucu: seçili rengin boyanmamış bir hücresini 2 sn vurgular
+  void _useHint() {
+    if (_hintCharges <= 0) return;
+    if (_selectedColorIndex < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Önce bir renk seçin!'),
+        backgroundColor: AppTheme.accentOrange,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+      return;
+    }
+
+    final uncolored = <String>[];
+    for (final entry in _gridData.entries) {
+      if (entry.value == _selectedColorIndex &&
+          !_cellStates.containsKey(entry.key)) {
+        uncolored.add(entry.key);
+      }
+    }
+
+    if (uncolored.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Bu renk zaten tamamlandı!'),
+        backgroundColor: AppTheme.accentGreen,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+      return;
+    }
+
+    // Pick a random uncolored cell for the selected color
+    final target = uncolored[Random().nextInt(uncolored.length)];
+
+    _hintTimer?.cancel();
+    setState(() {
+      _hintCharges--;
+      _hintCellKey = target;
+    });
+
+    _hintTimer = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _hintCellKey = null);
+    });
+  }
+
+  // Boya Bombası: seçili rengin rastgele 10 hücresini boyar
+  Future<void> _useBomb() async {
+    if (_bombCharges <= 0) return;
+    if (_selectedColorIndex < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Önce bir renk seçin!'),
+        backgroundColor: AppTheme.accentOrange,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+      return;
+    }
+
+    final uncolored = <String>[];
+    for (final entry in _gridData.entries) {
+      if (entry.value == _selectedColorIndex &&
+          !_cellStates.containsKey(entry.key)) {
+        uncolored.add(entry.key);
+      }
+    }
+
+    if (uncolored.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Bu renk zaten tamamlandı!'),
+        backgroundColor: AppTheme.accentGreen,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+      return;
+    }
+
+    uncolored.shuffle();
+    final targets = uncolored.take(10).toList();
+
+    setState(() => _bombCharges--);
+
+    for (final cellKey in targets) {
+      await Future.delayed(const Duration(milliseconds: 60));
+      if (!mounted) return;
+      final parts = cellKey.split('_');
+      final x = int.parse(parts[0]);
+      final y = int.parse(parts[1]);
+      setState(() {
+        _cellStates[cellKey] = _selectedColorIndex;
+        _coloredCells = _cellStates.length;
+        _myBrushStrokes++;
+        _paintHistory.add(_PaintStep(cellKey: cellKey, colorIndex: _selectedColorIndex));
+        _updateCompletedColors();
+      });
+      FirebaseService.colorCell(
+        roomId: widget.roomId,
+        x: x,
+        y: y,
+        colorIndex: _selectedColorIndex,
+        playerId: widget.playerId,
+      );
+    }
+    _checkCompletion();
+  }
+
+  // Renk Tamamlayıcı: seçili rengin tüm hücrelerini boyar
+  Future<void> _useFill() async {
+    if (_fillCharges <= 0) return;
+    if (_selectedColorIndex < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Önce bir renk seçin!'),
+        backgroundColor: AppTheme.accentOrange,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+      return;
+    }
+
+    final uncolored = <String>[];
+    for (final entry in _gridData.entries) {
+      if (entry.value == _selectedColorIndex &&
+          !_cellStates.containsKey(entry.key)) {
+        uncolored.add(entry.key);
+      }
+    }
+
+    if (uncolored.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Bu renk zaten tamamlandı!'),
+        backgroundColor: AppTheme.accentGreen,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 1),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+      return;
+    }
+
+    setState(() => _fillCharges--);
+
+    // Wave fill animation — paint in small batches
+    const batchSize = 15;
+    for (int i = 0; i < uncolored.length; i += batchSize) {
+      await Future.delayed(const Duration(milliseconds: 40));
+      if (!mounted) return;
+      final batch = uncolored.skip(i).take(batchSize);
+      setState(() {
+        for (final cellKey in batch) {
+          _cellStates[cellKey] = _selectedColorIndex;
+          _paintHistory.add(_PaintStep(cellKey: cellKey, colorIndex: _selectedColorIndex));
+          _myBrushStrokes++;
+        }
+        _coloredCells = _cellStates.length;
+        _updateCompletedColors();
+      });
+      for (final cellKey in batch) {
+        final parts = cellKey.split('_');
+        FirebaseService.colorCell(
+          roomId: widget.roomId,
+          x: int.parse(parts[0]),
+          y: int.parse(parts[1]),
+          colorIndex: _selectedColorIndex,
+          playerId: widget.playerId,
+        );
+      }
+    }
+    _checkCompletion();
+    if (!widget.isSolo) _autoAdvanceColor();
+  }
+
+
   void _startReplay() {
     if (_paintHistory.isEmpty) return;
     setState(() {
@@ -1043,6 +1309,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                 cellStates: displayCellStates,
                                 palette: _palette,
                                 selectedColorIndex: _isReplaying ? -1 : _selectedColorIndex,
+                                hintCellKey: _hintCellKey,
                                 onCellTap: _onCellTap,
                               ),
                             ),
@@ -1063,6 +1330,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       onColorSelected: (index) {
                         setState(() => _selectedColorIndex = index);
                       },
+                    ),
+
+                  // Powerups Bar
+                  if (!_isReplaying && !_isCompleted)
+                    PowerupsBar(
+                      wandCharges: _wandCharges,
+                      hintCharges: _hintCharges,
+                      bombCharges: _bombCharges,
+                      fillCharges: _fillCharges,
+                      onTap: _showPowerupDialog,
                     ),
 
                   // Emoji Bar
