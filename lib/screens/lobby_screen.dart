@@ -222,9 +222,10 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
           ),
         ),
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
               children: [
                 // Header
                 Row(
@@ -371,7 +372,7 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
                   ),
                 ),
 
-                const Spacer(),
+                const SizedBox(height: 24),
 
                 // Processing indicator or action button
                 if (_isProcessingImage) ...[
@@ -412,7 +413,7 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
                       ],
                     ),
                   ),
-                ] else if (widget.isSolo || (widget.isHost && hasGuest)) ...[
+                ] else if (widget.isSolo || widget.isHost) ...[
                   // Difficulty selector
                   Container(
                     width: double.infinity,
@@ -494,7 +495,7 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
                           icon: Icons.grid_view_rounded,
                           label: 'Şablon Seç',
                           onPressed: _showTemplatePicker,
-                          gradient: AppTheme.blueGradient,
+                          gradient: AppTheme.primaryGradient,
                           shadowColor: AppTheme.accentBlue,
                         ),
                       ),
@@ -509,11 +510,6 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
                         ),
                       ),
                     ],
-                  ),
-                ] else if (widget.isHost && !hasGuest) ...[
-                  _WaitingDotsWidget(
-                    animation: _dotController,
-                    textTheme: Theme.of(context).textTheme,
                   ),
                 ] else if (!widget.isHost) ...[
                   Container(
@@ -553,6 +549,7 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
           ),
         ),
       ),
+    ),
     );
   }
 
@@ -707,9 +704,6 @@ class _LobbyScreenState extends State<LobbyScreen> with TickerProviderStateMixin
                   _buildTemplateCard('Çiçek', 'flower', AppTheme.accentPink, bottomSheetContext),
                   _buildTemplateCard('Araba', 'car', AppTheme.accentBlue, bottomSheetContext),
                   _buildTemplateCard('Roket', 'rocket', AppTheme.accentOrange, bottomSheetContext),
-                  _buildTemplateCard('Kiraz', 'easy', AppTheme.accentGreen, bottomSheetContext), 
-                  _buildTemplateCard('Gitar', 'medium', AppTheme.accentOrange, bottomSheetContext), 
-                  _buildTemplateCard('Manzara', 'hard', AppTheme.accentPink, bottomSheetContext), 
                 ],
               ),
               const SizedBox(height: 20),

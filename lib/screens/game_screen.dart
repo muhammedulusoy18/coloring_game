@@ -649,6 +649,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       return;
     }
 
+    final targetColorIndex = _selectedColorIndex;
     uncolored.shuffle();
     final targets = uncolored.take(10).toList();
 
@@ -661,17 +662,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       final x = int.parse(parts[0]);
       final y = int.parse(parts[1]);
       setState(() {
-        _cellStates[cellKey] = _selectedColorIndex;
+        _cellStates[cellKey] = targetColorIndex;
         _coloredCells = _cellStates.length;
         _myBrushStrokes++;
-        _paintHistory.add(_PaintStep(cellKey: cellKey, colorIndex: _selectedColorIndex));
+        _paintHistory.add(_PaintStep(cellKey: cellKey, colorIndex: targetColorIndex));
         _updateCompletedColors();
       });
       FirebaseService.colorCell(
         roomId: widget.roomId,
         x: x,
         y: y,
-        colorIndex: _selectedColorIndex,
+        colorIndex: targetColorIndex,
         playerId: widget.playerId,
       );
     }
@@ -713,6 +714,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       return;
     }
 
+    final targetColorIndex = _selectedColorIndex;
     setState(() => _fillCharges--);
 
     // Wave fill animation — paint in small batches
@@ -723,8 +725,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       final batch = uncolored.skip(i).take(batchSize);
       setState(() {
         for (final cellKey in batch) {
-          _cellStates[cellKey] = _selectedColorIndex;
-          _paintHistory.add(_PaintStep(cellKey: cellKey, colorIndex: _selectedColorIndex));
+          _cellStates[cellKey] = targetColorIndex;
+          _paintHistory.add(_PaintStep(cellKey: cellKey, colorIndex: targetColorIndex));
           _myBrushStrokes++;
         }
         _coloredCells = _cellStates.length;
@@ -736,7 +738,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           roomId: widget.roomId,
           x: int.parse(parts[0]),
           y: int.parse(parts[1]),
-          colorIndex: _selectedColorIndex,
+          colorIndex: targetColorIndex,
           playerId: widget.playerId,
         );
       }
@@ -1310,11 +1312,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                 const PopupMenuItem(
                                   value: 'replay',
                                   child: Row(children: [
-                                    Icon(Icons.replay_rounded, color: AppTheme.accentPurple, size: 20),
-                                    SizedBox(width: 10),
-                                    Text('Boyamayı Tekrar İzle', style: TextStyle(color: AppTheme.textPrimary)),
-                                  ]),
-                                ),
+                              const PopupMenuItem(
+                                value: 'replay',
+                                child: Row(children: [
+                                  Icon(Icons.replay_rounded, color: AppTheme.accentPurple, size: 20),
+                                  SizedBox(width: 10),
+                                  Text('Boyamayı Tekrar İzle', style: TextStyle(color: AppTheme.textPrimary)),
+                                ]),
+                              ),
                               const PopupMenuItem(
                                 value: 'save',
                                 child: Row(children: [
@@ -1323,15 +1328,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                   Text('Galeriye Kaydet', style: TextStyle(color: AppTheme.textPrimary)),
                                 ]),
                               ),
-                              if (_paintHistory.isNotEmpty)
-                                const PopupMenuItem(
-                                  value: 'timelapse',
-                                  child: Row(children: [
-                                    Icon(Icons.movie_creation_rounded, color: AppTheme.accentPink, size: 20),
-                                    SizedBox(width: 10),
-                                    Text('Hızlı Çekim Paylaş', style: TextStyle(color: AppTheme.textPrimary)),
-                                  ]),
-                                ),
+                              const PopupMenuItem(
+                                value: 'timelapse',
+                                child: Row(children: [
+                                  Icon(Icons.movie_creation_rounded, color: AppTheme.accentPink, size: 20),
+                                  SizedBox(width: 10),
+                                  Text('Hızlı Çekim Paylaş', style: TextStyle(color: AppTheme.textPrimary)),
+                                ]),
+                              ),
                             ],
                           ],
                         ),
@@ -1473,6 +1477,48 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   onGoHome: () => Navigator.popUntil(context, (route) => route.isFirst),
                   onReplay: _paintHistory.isNotEmpty ? _startReplay : null,
                   onSave: _saveToGallery,
+                ),
+
+              // Magic Wand Button
+              if (!_isCompleted && !_isReplaying)
+                Positioned(
+                  right: 16,
+                  bottom: widget.isSolo ? 100 : 160,
+                  child: FloatingActionButton(
+                    heroTag: 'wandBtn',
+                    onPressed: _showWandDialog,
+                    backgroundColor: AppTheme.surfaceDark,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: const BorderSide(color: AppTheme.borderDark),
+                    ),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        const Text('✨', style: TextStyle(fontSize: 24)),
+                        if (_wandCharges > 0)
+                          Positioned(
+                            right: -5,
+                            top: -5,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: const BoxDecoration(
+                                color: AppTheme.accentPurple,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '$_wandCharges',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
 
               // Floating Emojis
